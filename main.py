@@ -25,6 +25,7 @@ def main():
         
         field.update()
         field.draw()
+        cursor.update()
         
         for s in cursor:
             screen.blit(block_images[cursor.color], s.rect)

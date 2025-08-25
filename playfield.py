@@ -7,6 +7,7 @@ NUM_COLLUMNS = 10
 BLOCK_SIZE = 34
 
 COLORS = ["blue", "green", "red", "violet", "yellow"]
+SHAPES = ["t", "i", "l", "invl", "s", "z"]
 
 
 def grid_to_pixel(x, y):
@@ -25,7 +26,7 @@ class Block(pygame.sprite.Sprite):
         
     
     def move(self, x, y):
-        self.rect = self.rect.move(x, y)
+        self.rect = pygame.Rect(x, y, BLOCK_SIZE, BLOCK_SIZE)
 
 
 class Grid(pygame.sprite.Group):
@@ -83,30 +84,76 @@ class Cursor(pygame.sprite.Group):
             self.color = color
         else:
             self.color = random.choice(COLORS)
-        if shape is not None:
-            self.shape = shape
-        else:
-            self.shape = [[None, True, None],
-                          [None, True, True],
-                          [None, True, None]]
-        
-        self.make_cursor_blocks()
 
+        if shape not in SHAPES:
+            shape = "t"
+
+        match shape:
+            case "t":
+                self.shape = [[True, True, True],
+                              [None, True, None]]
+            case "i":
+                self.shape = [[True, True, True, True]]
+            case "l":
+                self.shape = [[True, True, True],
+                              [None, None, True]]
+            case "invl":
+                self.shape = [[True, True, True],
+                              [True, None, None]]
+            case "s":
+                self.shape = [[None, True, True],
+                              [True, True, None]]
+            case "z":
+                self.shape = [[True, True, None],
+                              [None, True, True]]
+                
+        
+        self.update_block_positions()
+    
+    def update(self):
+        keys = pygame.key.get_pressed()
+
+        if keys[pygame.K_LEFT]:
+            self.move(-1)
+        if keys[pygame.K_RIGHT]:
+            self.move(1)
+        if keys[pygame.K_UP]:
+            self.rotate(True)
+
+        self.update_block_positions()
+
+    def update_block_positions(self):
+        for y in range(len(self.shape)):
+            for x in range(len(self.shape[y])):
+                if self.shape[y][x] is True:
+                    block =  Block(self.color)
+                    self.shape[y][x] = block
+                    self.add(block)
+                if self.shape[y][x] is not None:
+                    pos_x, pos_y = grid_to_pixel(self.pos + x, y)
+                    self.shape[y][x].move(pos_x,pos_y)
+        
 
     def move(self, delta):
         self.pos += delta
         if self.pos < 0:
             self.pos = 0
-        if self.pos > NUM_COLLUMNS:
-            self.pos = NUM_COLLUMNS
+        
+        # Right side movement is limited by the width if the currently held shape
+        if self.pos + len(self.shape[0]) > NUM_COLLUMNS:
+            self.pos = NUM_COLLUMNS - len(self.shape[0])
     
-    def make_cursor_blocks(self):
-        for x in range(len(self.shape)):
-            for y in range(len(self.shape[x])):
-                if self.shape[x][y] is True:
-                    block = Block(self.color)
-                    pos_x, pos_y = grid_to_pixel(self.pos + x, y)
-                    block.move(pos_x,pos_y)
-                    self.shape[x][y] = block
-                    self.add(block)
+    def rotate(self, clockwise):
+        width = len(self.shape[0])
+        if clockwise:
+            temp_shape = [[None for x in range(len(self.shape))] for x in range(len(self.shape[0]))]
+            for y in range(len(self.shape)):
+                for x in range(len(self.shape[y])):
+                    temp_shape[x][y] = self.shape[y][x]
+        
+        self.shape = temp_shape
+            
+
+
+    
 
