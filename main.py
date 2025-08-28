@@ -3,7 +3,7 @@ from playfield import *
 
 def main():
     pygame.init()
-    screen = pygame.display.set_mode((1280,720))
+    screen = pygame.display.set_mode((800,720))
     clock = pygame.time.Clock()
 
     blue_block = pygame.transform.scale2x(pygame.image.load(os.path.join("graphics", "blue.png")))
@@ -14,7 +14,7 @@ def main():
     block_images = {"blue": blue_block, "green": green_block, "red": red_block, "violet": violet_block, "yellow": yellow_block}
 
     field = Playfield(screen, block_images)
-    cursor = Cursor()
+    cursor = Cursor(screen, block_images, field)
     #field.fill_with_blocks()
 
     running = True
@@ -24,8 +24,10 @@ def main():
                 running = False
         
         field.update()
-        field.draw()
         cursor.update()
+        screen.fill("black")
+        field.draw()
+        cursor.draw()
         
         for s in cursor:
             screen.blit(block_images[cursor.color], s.rect)
