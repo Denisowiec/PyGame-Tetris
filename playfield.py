@@ -16,6 +16,31 @@ def grid_to_pixel(x, y):
 def pixel_to_grid(x, y):
     return ((x - LEFT_MARGIN) // BLOCK_SIZE, (y - TOP_MARGIN) // BLOCK_SIZE)
 
+def shape_type_to_shape(type):
+    if type not in SHAPES:
+        raise Exception("Wrong shape!")
+    
+    match type:
+        case "t":
+            shape = [[True, True, True],
+                     [None, True, None]]
+        case "i":
+            shape = [[True, True, True, True]]
+        case "l":
+            shape = [[True, True, True],
+                     [None, None, True]]
+        case "invl":
+            shape = [[True, True, True],
+                     [True, None, None]]
+        case "s":
+            shape = [[None, True, True],
+                     [True, True, None]]
+        case "z":
+            shape = [[True, True, None],
+                     [None, True, True]]
+    
+    return shape
+
 class Block(pygame.sprite.Sprite):
     def __init__(self, color, x = 0, y = 0):
         super().__init__()
@@ -84,17 +109,13 @@ class Grid(pygame.sprite.Group):
         return True
     
     def offset_by_one_row(self, upto):
-        print(f"offsetting up to: {upto}")
-        self.print_grid()
         for y in reversed(range(upto)):
             for x in range(NUM_COLLUMNS):
                 block = self.get_block(x, y)
                 if block != None:
                     self.move_within_grid(x, y, x, y+1)
-        self.print_grid()
 
     def offset_empty_rows(self, rows):
-        print(f"Offsetting rows: {rows}")
         for y in sorted(rows):
             self.offset_by_one_row(y)
 
@@ -113,12 +134,12 @@ class Playfield():
         # Drawing the border around the plaifield
         pygame.draw.rect(self.screen, "white", pygame.Rect((LEFT_MARGIN // 2) - 2,
                                                            (TOP_MARGIN // 2) - 2,
-                                                           (NUM_COLLUMNS * BLOCK_SIZE + LEFT_MARGIN // 2) + 4,
-                                                           (NUM_ROWS * BLOCK_SIZE + TOP_MARGIN // 2) + 4))
+                                                           (NUM_COLLUMNS * BLOCK_SIZE + LEFT_MARGIN // 2) + 6,
+                                                           (NUM_ROWS * BLOCK_SIZE + TOP_MARGIN // 2) + 6))
         pygame.draw.rect(self.screen, "black", pygame.Rect((LEFT_MARGIN // 2) + 1,
                                                            (TOP_MARGIN // 2) + 1,
-                                                           (NUM_COLLUMNS * BLOCK_SIZE + LEFT_MARGIN // 2) - 2,
-                                                           (NUM_ROWS * BLOCK_SIZE + TOP_MARGIN // 2) - 2))
+                                                           (NUM_COLLUMNS * BLOCK_SIZE + LEFT_MARGIN // 2),
+                                                           (NUM_ROWS * BLOCK_SIZE + TOP_MARGIN // 2)))
         # Drawing the blocks in the playfield
         for s in self.blocks:
             self.screen.blit(self.block_images[s.color], s.rect)
@@ -146,20 +167,20 @@ class Playfield():
         return filled_rows
     
     def clear_filled_rows(self, rows):
-        print("Clearing filled rows...")
         for y in rows:
             for x in range(NUM_COLLUMNS):
                 self.blocks.rem_from_grid(x, y)
         self.blocks.offset_empty_rows(rows)
 
 class Cursor(pygame.sprite.Group):
-    def __init__(self, screen, block_images, playfield, color = None, shape = None):
+    def __init__(self, screen, block_images, playfield, shape_keeper, color = None, shape = None):
         super().__init__()
         self.block_images = block_images
         self.screen = screen
         self.field = playfield
         self.BASE_POS = 5
         self.collision_detected_last_time = False
+        self.shape_keeper = shape_keeper
         
         self.pos = self.BASE_POS
         self.y_pos = 0
@@ -188,7 +209,7 @@ class Cursor(pygame.sprite.Group):
             self.screen.blit(self.block_images[self.color], s.rect)
     
 
-    def new_shape(self, shape=None):
+    def new_shape(self, shape=None, color=None):
         self.pos = self.BASE_POS
         self.y_pos = 0
 
@@ -196,26 +217,14 @@ class Cursor(pygame.sprite.Group):
             shape = random.choice(SHAPES)
         
         self.shape_type = shape
-        self.color = random.choice(COLORS)
 
-        match shape:
-            case "t":
-                self.shape = [[True, True, True],
-                              [None, True, None]]
-            case "i":
-                self.shape = [[True, True, True, True]]
-            case "l":
-                self.shape = [[True, True, True],
-                              [None, None, True]]
-            case "invl":
-                self.shape = [[True, True, True],
-                              [True, None, None]]
-            case "s":
-                self.shape = [[None, True, True],
-                              [True, True, None]]
-            case "z":
-                self.shape = [[True, True, None],
-                              [None, True, True]]
+        if color is None:
+            self.color = random.choice(COLORS)
+        else:
+            self.color = color
+
+        self.shape = shape_type_to_shape(shape)
+        self.pos -= len(self.shape)//2
     
     def update(self, gravity):
         keys = pygame.key.get_pressed()
@@ -247,12 +256,20 @@ class Cursor(pygame.sprite.Group):
             self.reb_down += 1
         else:
             self.reb_down = 0
+        if keys[pygame.K_ESCAPE]:
+            pygame.quit()
 
         
         if gravity:
             if self.collision_detected_last_time and self.check_collisions():
+                if self.y_pos == 0:
+                    print("Game over!")
+                    print(f"Final score: {self.shape_keeper.score}.")
+                    print(f"You reached level {self.shape_keeper.level}.")
+                    pygame.quit()
                 self.transfer_to_field()
-                self.new_shape()
+                shape, color = self.shape_keeper.take_next_shape()
+                self.new_shape(shape, color)
                 self.update_block_positions()
             else:
                 self.y_pos += 1
@@ -339,5 +356,78 @@ class Cursor(pygame.sprite.Group):
 
             self.field.add_block(pos_x, pos_y, self.color)
 
+class ScoreDisplay():
+    def __init__(self, font, screen, block_images, score = 0, level = 1):
+        self.score = score
+        self.num_rows_cleared = 0
+        self.level = level
+        self.font = font
+        self.screen = screen
+        self.block_images = block_images
+        self.next_color = random.choice(COLORS)
+        self.next_shape = random.choice(SHAPES)
+        self.next_shape_blocks = shape_type_to_shape(self.next_shape)
 
-            
+        self.score_rect = pygame.Rect(LEFT_MARGIN * 3 + BLOCK_SIZE * NUM_COLLUMNS,
+                                TOP_MARGIN//2,
+                                BLOCK_SIZE * NUM_COLLUMNS,
+                                BLOCK_SIZE)
+        self.level_rect = pygame.Rect(LEFT_MARGIN * 3 + BLOCK_SIZE * NUM_COLLUMNS,
+                                TOP_MARGIN + BLOCK_SIZE + 6,
+                                BLOCK_SIZE * NUM_COLLUMNS,
+                                BLOCK_SIZE)
+        self.next_shape_rect = pygame.Rect(LEFT_MARGIN * 3 + BLOCK_SIZE * NUM_COLLUMNS,
+                                TOP_MARGIN + 10 + (BLOCK_SIZE + 6) * 2,
+                                BLOCK_SIZE * 4,
+                                BLOCK_SIZE * 4)
+        self.surf = None
+
+    def draw(self):
+        score_display_surf = self.font.render(f"Score: {self.score}00", False, "white")
+        level_display_surf = self.font.render(f"Level: {self.level}", False, "white")
+        next_shape_surf = pygame.Surface((BLOCK_SIZE*4, BLOCK_SIZE*4))
+    
+        self.screen.blit(score_display_surf, self.score_rect)
+        self.screen.blit(level_display_surf, self.level_rect)
+
+        width = len(self.next_shape_blocks)
+        for y in range(len(self.next_shape_blocks[0])):
+            for x in range(width):
+                if self.next_shape_blocks[width-x-1][y]:
+                    next_shape_surf.blit(self.block_images[self.next_color], (x*BLOCK_SIZE, y * BLOCK_SIZE))
+        
+        self.screen.blit(next_shape_surf, self.next_shape_rect)
+
+    def add_score(self, num_rows):
+        if num_rows == 1:
+            self.score += 1
+        elif num_rows == 2:
+            self.score += 2
+        elif num_rows == 3:
+            self.score += 4
+        elif num_rows >= 4:
+            self.score += 10
+        else:
+            return
+        
+        self.num_rows_cleared += num_rows
+
+        if self.num_rows_cleared >= 10:
+            self.advance_level()
+            self.num_rows_cleared -= 10
+    
+    def advance_level(self):
+        self.level += 1
+        if self.level > 10:
+            self.level = 10
+
+    def take_next_shape(self):
+        s = self.next_shape
+        c = self.next_color
+        self.next_shape = random.choice(SHAPES)
+        self.create_shape_pattern()
+        self.next_color = random.choice(COLORS)
+        return (s, c)
+    
+    def create_shape_pattern(self):
+        self.next_shape_blocks = shape_type_to_shape(self.next_shape)

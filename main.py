@@ -13,13 +13,14 @@ def main():
     yellow_block = pygame.transform.scale2x(pygame.image.load(os.path.join("graphics", "yellow.png")))
     block_images = {"blue": blue_block, "green": green_block, "red": red_block, "violet": violet_block, "yellow": yellow_block}
 
+    font = pygame.font.Font(os.path.join("graphics", "VT323-Regular.ttf"), 40)
+    score_disp = ScoreDisplay(font, screen, block_images)
     field = Playfield(screen, block_images)
-    cursor = Cursor(screen, block_images, field)
+    cursor = Cursor(screen, block_images, field, score_disp)
     #field.fill_with_blocks()
-    gravity_offset = 1000
+    base_gravity_offset = 1000
+    gravity_offset = base_gravity_offset
     gravity_dt = 0
-
-    score = 0
 
     running = True
     while running:
@@ -32,9 +33,9 @@ def main():
         field.update()
         filled_rows = field.check_filled_rows()
         if len(filled_rows) > 0:
-            print(f"Found filled rows: {filled_rows}")
             field.clear_filled_rows(filled_rows)
-            score += len(filled_rows) * 500
+            score_disp.add_score(len(filled_rows))
+            gravity_offset = base_gravity_offset - 70 * score_disp.level - 1
 
         cursor.update(is_grav_frame)
 
@@ -45,6 +46,7 @@ def main():
         screen.fill("black")
         field.draw()
         cursor.draw()
+        score_disp.draw()
         
         for s in cursor:
             screen.blit(block_images[cursor.color], s.rect)
