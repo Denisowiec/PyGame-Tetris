@@ -16,6 +16,10 @@ def main():
     field = Playfield(screen, block_images)
     cursor = Cursor(screen, block_images, field)
     #field.fill_with_blocks()
+    gravity_offset = 1000
+    gravity_dt = 0
+
+    score = 0
 
     running = True
     while running:
@@ -23,8 +27,21 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
         
+        is_grav_frame = gravity_dt > gravity_offset
+
         field.update()
-        cursor.update()
+        filled_rows = field.check_filled_rows()
+        if len(filled_rows) > 0:
+            print(f"Found filled rows: {filled_rows}")
+            field.clear_filled_rows(filled_rows)
+            score += len(filled_rows) * 500
+
+        cursor.update(is_grav_frame)
+
+        if is_grav_frame:
+            is_grav_frame = False
+            gravity_dt = 0
+        
         screen.fill("black")
         field.draw()
         cursor.draw()
@@ -35,7 +52,8 @@ def main():
 
         pygame.display.flip()
 
-        clock.tick(60)
+        dt = clock.tick(30)
+        gravity_dt += dt
 
     pygame.quit()
 

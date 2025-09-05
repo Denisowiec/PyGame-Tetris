@@ -14,7 +14,7 @@ def grid_to_pixel(x, y):
     return (LEFT_MARGIN + x * BLOCK_SIZE, TOP_MARGIN + y * BLOCK_SIZE)
 
 def pixel_to_grid(x, y):
-    return ((x - LEFT_MARGIN) / BLOCK_SIZE, (y - TOP_MARGIN) / BLOCK_SIZE)
+    return ((x - LEFT_MARGIN) // BLOCK_SIZE, (y - TOP_MARGIN) // BLOCK_SIZE)
 
 class Block(pygame.sprite.Sprite):
     def __init__(self, color, x = 0, y = 0):
@@ -27,8 +27,8 @@ class Block(pygame.sprite.Sprite):
     
     def move(self, x, y):
         self.rect = pygame.Rect(x, y, BLOCK_SIZE, BLOCK_SIZE)
-    
-    def get_corrds(self):
+
+    def get_coords(self):
         return (self.rect.x, self.rect.y)
 
 
@@ -37,6 +37,18 @@ class Grid(pygame.sprite.Group):
         super().__init__()
         # This creates a grid of NUM_ROWS by NUM_COLLUMNS
         self.grid = [[None for i in range(NUM_ROWS)] for i in range(NUM_COLLUMNS)]
+    
+    def print_grid(self):
+        for y in range(len(self.grid[0])):
+            string = ""
+            for x in range(len(self.grid)):
+                if self.grid[x][y] is None:
+                    string += "-"
+                else:
+                    string += "o"
+            print(string)
+        print("\n")
+            
     
     def add_to_grid(self, block, pos_x, pos_y):
         x, y = grid_to_pixel(pos_x, pos_y)
@@ -48,7 +60,43 @@ class Grid(pygame.sprite.Group):
         block = self.grid[pos_x][pos_y]
         self.remove(block)
         self.grid[pos_x][pos_y] = None
+    
+    def move_within_grid(self, old_x, old_y, new_x, new_y):
+        if not self.get_block(new_x, new_y) is None:
+            raise Exception("Moving a block to a non-empty space!")
+        if self.get_block(old_x, old_y) is None:
+            raise Exception("Attempting to move an empty space!")
+        self.grid[new_x][new_y] = self.grid[old_x][old_y]
+        self.grid[old_x][old_y] = None
+        pix_x, pix_y = grid_to_pixel(new_x, new_y)
+        self.grid[new_x][new_y].move(pix_x, pix_y)
+    
+    def get_block(self, x, y):
+        return self.grid[x][y]
+    
+    def is_empty(self):
+        return len(self.sprites()) == 0
+    
+    def is_row_filled(self, y):
+        for x in range(NUM_COLLUMNS):
+            if self.grid[x][y] is None:
+                return False
+        return True
+    
+    def offset_by_one_row(self, upto):
+        print(f"offsetting up to: {upto}")
+        self.print_grid()
+        for y in reversed(range(upto)):
+            for x in range(NUM_COLLUMNS):
+                block = self.get_block(x, y)
+                if block != None:
+                    self.move_within_grid(x, y, x, y+1)
+        self.print_grid()
 
+    def offset_empty_rows(self, rows):
+        print(f"Offsetting rows: {rows}")
+        for y in sorted(rows):
+            self.offset_by_one_row(y)
 
 class Playfield():
     def __init__(self, screen, images_dict):
@@ -59,8 +107,6 @@ class Playfield():
     
     def update(self):
         for s in self.blocks:
-            # gravity
-            #s.move(0, 1)
             pass
     
     def draw(self):
@@ -88,6 +134,23 @@ class Playfield():
         for x in range(0, NUM_COLLUMNS):
             for y in range(0, NUM_ROWS):
                 self.add_block(x, y)
+    
+    def check_filled_rows(self):
+        filled_rows = []
+        if self.blocks.is_empty():
+            return filled_rows
+
+        for y in reversed(range(NUM_ROWS)):
+            if self.blocks.is_row_filled(y):
+                filled_rows.append(y)
+        return filled_rows
+    
+    def clear_filled_rows(self, rows):
+        print("Clearing filled rows...")
+        for y in rows:
+            for x in range(NUM_COLLUMNS):
+                self.blocks.rem_from_grid(x, y)
+        self.blocks.offset_empty_rows(rows)
 
 class Cursor(pygame.sprite.Group):
     def __init__(self, screen, block_images, playfield, color = None, shape = None):
@@ -95,8 +158,11 @@ class Cursor(pygame.sprite.Group):
         self.block_images = block_images
         self.screen = screen
         self.field = playfield
+        self.BASE_POS = 5
+        self.collision_detected_last_time = False
         
-        self.pos = 5
+        self.pos = self.BASE_POS
+        self.y_pos = 0
         if color is not None:
             self.color = color
         else:
@@ -107,9 +173,11 @@ class Cursor(pygame.sprite.Group):
         else:
             self.shape_type = shape
 
+        # key rebound timers
         self.reb_left = 0
         self.reb_right = 0
         self.reb_rot_cw = 0
+        self.reb_down = 0
 
         self.new_shape()
         
@@ -121,25 +189,26 @@ class Cursor(pygame.sprite.Group):
     
 
     def new_shape(self, shape=None):
+        self.pos = self.BASE_POS
+        self.y_pos = 0
+
         if shape is None:
-            shape = self.shape_type
-        else:
-            self.shape_type = shape
+            shape = random.choice(SHAPES)
         
+        self.shape_type = shape
+        self.color = random.choice(COLORS)
+
         match shape:
             case "t":
-                self.shape = [[None, None, None],
-                              [True, True, True],
+                self.shape = [[True, True, True],
                               [None, True, None]]
             case "i":
                 self.shape = [[True, True, True, True]]
             case "l":
-                self.shape = [[None, None, None],
-                              [True, True, True],
+                self.shape = [[True, True, True],
                               [None, None, True]]
             case "invl":
-                self.shape = [[None, None, None],
-                              [True, True, True],
+                self.shape = [[True, True, True],
                               [True, None, None]]
             case "s":
                 self.shape = [[None, True, True],
@@ -148,18 +217,20 @@ class Cursor(pygame.sprite.Group):
                 self.shape = [[True, True, None],
                               [None, True, True]]
     
-    def update(self):
+    def update(self, gravity):
         keys = pygame.key.get_pressed()
 
         if keys[pygame.K_LEFT]:
             if self.reb_left == 0 or self.reb_left > 20:
-                self.move(-1)
+                if not self.check_collisions(-1):
+                    self.move(-1)
             self.reb_left += 1
         else:
             self.reb_left = 0
         if keys[pygame.K_RIGHT]:
             if self.reb_right == 0 or self.reb_right > 20:
-                self.move(1)
+                if not self.check_collisions(1):
+                    self.move(1)
             self.reb_right += 1
         else:
             self.reb_right = 0
@@ -169,13 +240,31 @@ class Cursor(pygame.sprite.Group):
             self.reb_rot_cw += 1
         else:
             self.reb_rot_cw = 0
+        if keys[pygame.K_DOWN]:
+            if self.reb_down == 0 or self.reb_down > 20:
+                if not self.check_collisions() and not gravity:
+                    self.y_pos += 1
+            self.reb_down += 1
+        else:
+            self.reb_down = 0
 
-        if self.check_collisions():
-            self.transfer_to_field()
-            self.new_shape()
         
+        if gravity:
+            if self.collision_detected_last_time and self.check_collisions():
+                self.transfer_to_field()
+                self.new_shape()
+                self.update_block_positions()
+            else:
+                self.y_pos += 1
+                if self.y_pos > 20:
+                    self.y_pos = 20
 
         self.update_block_positions()
+
+        if self.check_collisions():
+            self.collision_detected_last_time = True
+        else:
+            self.collision_detected_last_time = False
 
     def update_block_positions(self):
         for y in range(len(self.shape)):
@@ -185,7 +274,7 @@ class Cursor(pygame.sprite.Group):
                     self.shape[y][x] = block
                     self.add(block)
                 if self.shape[y][x] is not None:
-                    pos_x, pos_y = grid_to_pixel(self.pos + x, y)
+                    pos_x, pos_y = grid_to_pixel(self.pos + x, self.y_pos + y)
                     self.shape[y][x].move(pos_x,pos_y)
         
 
@@ -218,22 +307,35 @@ class Cursor(pygame.sprite.Group):
         new_height = len(self.shape)
         self.move(width-new_width)
     
-    def check_collisions(self):
+    def check_collisions(self, x_offset = 0):
         for s in self:
             pix_x, pix_y = s.get_coords()
             pos_x, pos_y = pixel_to_grid(pix_x, pix_y)
 
-            # Checking for a collision with the bottom of the field:
-            if pos_y > NUM_ROWS:
-                return True
-            # Checking if there's something in the further down position in the field:
-            elif not self.field.blocks[pos_x][pos_y + 1] is None:
-                return True
+            pos_x += x_offset
+            if pos_x < 0:
+                pos_x = 0
+            if pos_x >= NUM_COLLUMNS:
+                pos_x = NUM_COLLUMNS - 1
+
+            # Special check for x_offset
+            if x_offset != 0:
+                if not self.field.blocks.get_block(pos_x, pos_y) is None:
+                    return True
+            else:
+                # Checking for a collision with the bottom of the field:
+                if pos_y + 1 >= NUM_ROWS:
+                    return True
+                # Checking if there's something in the further down position in the field:
+                elif not self.field.blocks.get_block(pos_x, pos_y + 1) is None:
+                    return True
+        return False
             
     def transfer_to_field(self):
         for s in self:
             pix_x, pix_y = s.get_coords()
             pos_x, pos_y = pixel_to_grid(pix_x, pix_y)
+            self.remove(s)
 
             self.field.add_block(pos_x, pos_y, self.color)
 
